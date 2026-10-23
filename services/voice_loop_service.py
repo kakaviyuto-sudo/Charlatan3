@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import os
 import queue
 import tempfile
@@ -21,7 +20,13 @@ except Exception:  # pragma: no cover
 
 
 class VoiceLoopService(BaseService):
-    """Background loop that continuously consumes audio_queue and turns it into text + LLM reply."""
+    """Background loop: audio_queue -> Whisper -> LLM response.
+
+    Features:
+    - ignores very short false positives
+    - supports wake word trigger
+    - appends transcript + reply into runtime state history
+    """
 
     name = "voice_loop"
 
@@ -34,6 +39,10 @@ class VoiceLoopService(BaseService):
         compute_type: str = "int8",
         language: str = "ja",
         llm_service_name: str = "llm",
+        min_transcript_chars: int = 3,
+        wake_word: Optional[str] = None,
+        wake_word_mode: str = "enabled",
+        ignore_short_phrases: tuple[str, ...] = ("あっ", "ああ", "ええ", "はい", "うん"),
     ):
         super().__init__(runtime)
         self.logger = get_logger("services.voice_loop")
@@ -42,16 +51,25 @@ class VoiceLoopService(BaseService):
         self.compute_type = compute_type
         self.language = language
         self.llm_service_name = llm_service_name
+        self.min_transcript_chars = min_transcript_chars
+        self.wake_word = wake_word
+        self.wake_word_mode = wake_word_mode
+        self.ignore_short_phrases = ignore_short_phrases
+
         self.stop_event = threading.Event()
         self.thread: Optional[threading.Thread] = None
         self.whisper_model = self._load_whisper_model()
 
     def _load_whisper_model(self):
         if WhisperModel is None:
-            self.logger.warning("faster-whisper is not installed; voice loop will remain idle until installed.")
+            self.logger.warning("faster-whisper is not installed; voice loop idle.")
             return None
         try:
-            return WhisperModel(self.model_name, device=self.device, compute_type=self.compute_type)
+            return WhisperModel(
+                self.model_name,
+                device=self.device,
+                compute_type=self.compute_type,
+            )
         except Exception as exc:  # pragma: no cover
             self.logger.exception("Failed to initialize WhisperModel: %s", exc)
             return None
@@ -59,7 +77,6 @@ class VoiceLoopService(BaseService):
     def start(self) -> None:
         if self.thread and self.thread.is_alive():
             return
-
         self.stop_event.clear()
         self.thread = threading.Thread(target=self._worker, name="VoiceLoopWorker", daemon=True)
         self.thread.start()
@@ -70,6 +87,46 @@ class VoiceLoopService(BaseService):
         if self.thread:
             self.thread.join(timeout=5.0)
         self.state.set_service_status(self.name, "stopped")
+
+    def _normalize_text(self, text: str) -> str:
+        return " ".join(text.strip().split())
+
+    def _is_ignored_short_phrase(self, text: str) -> bool:
+        if not text:
+            return True
+        canon = self._normalize_text(text)
+        if len(canon) < self.min_transcript_chars:
+            return True
+        if canon in self.ignore_short_phrases:
+            return True
+        return False
+
+    def _strip_wake_word(self, text: str) -> str:
+        if self.wake_word is None:
+            return text
+        w = self.wake_word
+        canon = self._normalize_text(text)
+        if canon.startswith(w):
+            rest = canon[len(w):].strip(" 、。！？")
+            return rest
+        return canon
+
+    def _should_process(self, text: str) -> tuple[bool, str]:
+        canon = self._normalize_text(text)
+
+        if self._is_ignored_short_phrase(canon):
+            return False, ""
+
+        if self.wake_word is None:
+            return True, canon
+
+        if not canon.startswith(self.wake_word):
+            return False, ""
+
+        stripped = canon[len(self.wake_word):].strip(" 、。！？")
+        if len(stripped) < self.min_transcript_chars:
+            return False, ""
+        return True, stripped
 
     def _write_wav_temp(self, audio: np.ndarray) -> str:
         audio = np.asarray(audio, dtype=np.float32)
@@ -112,10 +169,8 @@ class VoiceLoopService(BaseService):
     def _push_text(self, text: str) -> None:
         if not text:
             return
-
         if self.state.recognized_text_queue is None:
             self.state.recognized_text_queue = []
-
         if hasattr(self.state.recognized_text_queue, "append"):
             self.state.recognized_text_queue.append(text)
         else:
@@ -144,15 +199,21 @@ class VoiceLoopService(BaseService):
                 if not transcript:
                     continue
 
-                self.logger.info("Recognized: %s", transcript)
-                self._push_text(transcript)
+                should_process, trimmed = self._should_process(transcript)
+                if not should_process:
+                    self.logger.info("Ignored short/wakeword transcript: %r", transcript)
+                    continue
+
+                self.logger.info("Recognized: %s", trimmed)
 
                 llm = self._get_llm_service()
                 if llm is not None:
-                    reply = llm.generate_simple(transcript)
+                    reply = llm.generate_simple(trimmed)
                     self.logger.info("LLM reply: %s", reply)
+                    self._push_text(trimmed)
+
                     if hasattr(self.state, "history"):
-                        self.state.history.append({"role": "user", "content": transcript})
+                        self.state.history.append({"role": "user", "content": trimmed})
                         self.state.history.append({"role": "assistant", "content": reply})
 
             except Exception as exc:
