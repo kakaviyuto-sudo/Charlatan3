@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Iterable, List
 
-from core.state import AppState
 from core.logger import get_logger
+from core.state import AppState
+
 
 class LifecycleManager:
     def __init__(self, state: AppState):
@@ -12,6 +13,8 @@ class LifecycleManager:
         self._services: List[object] = []
 
     def register(self, service: object) -> None:
+        if service is None:
+            raise ValueError("Cannot register a None service")
         if service not in self._services:
             self._services.append(service)
 
@@ -20,13 +23,17 @@ class LifecycleManager:
             self.register(service)
 
     def start_all(self) -> None:
+        if not self._services:
+            self.logger.info("No services registered")
+            return
+
         self.logger.info("Starting all services")
         for service in self._services:
             if hasattr(service, "start"):
                 try:
                     service.start()
                     self.state.set_service_status(service.__class__.__name__, "running")
-                except Exception as exc:
+                except Exception:
                     self.logger.exception("Service start failed: %s", service.__class__.__name__)
                     self.state.set_service_status(service.__class__.__name__, "failed")
                     continue
@@ -38,7 +45,7 @@ class LifecycleManager:
                 try:
                     service.stop()
                     self.state.set_service_status(service.__class__.__name__, "stopped")
-                except Exception as exc:
+                except Exception:
                     self.logger.exception("Service stop failed: %s", service.__class__.__name__)
                     self.state.set_service_status(service.__class__.__name__, "failed")
 
@@ -47,5 +54,5 @@ class LifecycleManager:
             if hasattr(service, "tick"):
                 try:
                     service.tick()
-                except Exception as exc:
+                except Exception:
                     self.logger.exception("Service tick failed: %s", service.__class__.__name__)

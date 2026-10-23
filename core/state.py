@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, field
 from threading import Event, Lock
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional
 
 from config.settings import Settings
+
 
 @dataclass
 class AppState:
@@ -55,6 +56,8 @@ class AppState:
     prompt_context: Dict[str, Any] = field(default_factory=dict)
 
     def register_service(self, name: str, instance: Any) -> None:
+        if not name or not isinstance(name, str):
+            raise ValueError("Service name must be a non-empty string")
         self.services[name] = instance
         if name not in self.service_order:
             self.service_order.append(name)
@@ -67,10 +70,12 @@ class AppState:
 
     def mark_interaction(self) -> None:
         import time
+
         self.last_interaction_at = time.monotonic()
 
     def mark_screen_check(self) -> None:
         import time
+
         self.last_screen_check_at = time.monotonic()
 
     def reset_runtime(self) -> None:
@@ -83,6 +88,17 @@ class AppState:
         self.youtube_live_pending.clear()
         self.youtube_live_transcript.clear()
         self.youtube_live_session = {}
+        self.transcript_archive.clear()
+        self.transcript_last_signature = ""
+        self.transcript_last_at = 0.0
+        self.recent_ai_voice_signatures.clear()
+        self.audio_queue = None
+        self.recognized_text_queue = None
+        self.service_status.clear()
+        self.last_interaction_at = 0.0
+        self.last_screen_check_at = 0.0
+        self.prompt_context = {}
+        self.youtube_live_mode = False
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "AppState":

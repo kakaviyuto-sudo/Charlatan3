@@ -1,43 +1,53 @@
 from dataclasses import dataclass, field
-from typing import Optional, Any
+from typing import Any
+
 
 @dataclass
 class Event:
-    type: str
+    type: str = "event"
     payload: dict = field(default_factory=dict)
+
 
 @dataclass
 class UserSpeechDetected(Event):
-    pass
+    text: str = ""
+
 
 @dataclass
 class RecognizedTextReceived(Event):
-    text: str
+    text: str = ""
+
 
 @dataclass
 class AIReplyStarted(Event):
     text: str = ""
 
+
 @dataclass
 class AIReplyChunk(Event):
-    chunk: str
+    chunk: str = ""
+
 
 @dataclass
 class AIReplyComplete(Event):
-    text: str
+    text: str = ""
+
 
 @dataclass
 class ScreenChanged(Event):
     current_title: str = ""
     summary: str = ""
 
+
 @dataclass
 class YoutubeLiveCaption(Event):
-    text: str
+    text: str = ""
+
 
 @dataclass
 class PlaybackStarted(Event):
     text: str = ""
+
 
 @dataclass
 class PlaybackFinished(Event):
