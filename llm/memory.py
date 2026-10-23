@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
+
+from services.base_service import BaseService
 
 
-class MemoryService:
-    def __init__(self, storage=None, runtime=None):
+class MemoryService(BaseService):
+    name = "memory"
+
+    def __init__(self, runtime=None, storage=None):
+        super().__init__(runtime=runtime)
         self.storage = storage
-        self.runtime = runtime
         self._items: List[Dict[str, Any]] = []
         self._load_from_storage()
 
@@ -40,7 +44,7 @@ class MemoryService:
         if len(normalized) < 8:
             return False
 
-        tokens = re.findall(r"\b\w+\b", normalized)
+        tokens = re.findall(r"\b[\w'-]+\b", normalized)
         if len(tokens) < 3:
             return False
 
@@ -53,7 +57,7 @@ class MemoryService:
 
         entry = {
             "text": normalized,
-            "importance": score,
+            "importance": round(score, 2),
             "timestamp": time.time(),
         }
         self._items.append(entry)
@@ -66,7 +70,7 @@ class MemoryService:
 
         query_tokens = {
             token.lower()
-            for token in re.findall(r"\b\w+\b", question)
+            for token in re.findall(r"\b[\w'-]+\b", question)
             if len(token) > 2
         }
         if not query_tokens:
@@ -82,7 +86,7 @@ class MemoryService:
         if not scored:
             return ""
 
-        scored.sort(key=lambda entry: entry[0], reverse=True)
+        scored.sort(key=lambda item: item[0], reverse=True)
         return "\n".join(text for _, text in scored[:limit])
 
     def load(self):
