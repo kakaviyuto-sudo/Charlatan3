@@ -1,25 +1,21 @@
 from __future__ import annotations
 
-from typing import Dict, Any
+from typing import Any, Dict
 
 from app.runtime import Runtime
 from config.settings import Settings
+from llm.memory import MemoryService
 from services.service_registry import ServiceRegistry
+
 
 def build_runtime_services(runtime: Runtime, registry: ServiceRegistry) -> Dict[str, Any]:
     """
-    This function wires the actual services into the runtime.
-    The concrete service classes will be added here when you implement each domain.
+    Wire the services required for the runtime to function with a small but real default set.
     """
     services: Dict[str, Any] = {}
 
-    # Example placeholders:
-    # services["llm"] = registry.create("llm", runtime)
-    # services["memory"] = registry.create("memory", runtime)
-    # services["audio"] = registry.create("audio", runtime)
-    # services["tts"] = registry.create("tts", runtime)
-    # services["vtube"] = registry.create("vtube", runtime)
-    # services["screen"] = registry.create("screen", runtime)
-    # services["bridge"] = registry.create("bridge", runtime)
+    if "memory" not in registry._services:
+        registry.register("memory", MemoryService)
 
+    services["memory"] = registry.create("memory", runtime=runtime)
     return services
