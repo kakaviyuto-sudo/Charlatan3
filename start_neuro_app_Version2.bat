@@ -9,7 +9,7 @@ set APP_PATH=%~dp0app\main.py
 where py >nul 2>nul
 if errorlevel 1 (
     echo Python launcher 'py' was not found on PATH.
-    echo Install Python 3.11 and ensure 'py' is available.
+    echo Install Python 3.11 from python.org and ensure 'py' is available.
     pause
     exit /b 1
 )
@@ -17,7 +17,18 @@ if errorlevel 1 (
 py -3.11 -V >nul 2>nul
 if errorlevel 1 (
     echo Python 3.11 is required for this project.
-    echo Install Python 3.11, then rerun this script.
+    echo Install Python 3.11 and retry.
+    pause
+    exit /b 1
+)
+
+where cl >nul 2>nul
+if errorlevel 1 (
+    echo MSVC compiler not detected.
+    echo Install Visual Studio 2022 Build Tools with:
+    echo   - MSVC v143 C++ x64/x86 build tools
+    echo   - Windows 10/11 SDK
+    echo   - Desktop development with C++
     pause
     exit /b 1
 )
@@ -37,7 +48,6 @@ if not exist "%VENV_PY%" (
 
 if not exist "%VENV_PY%" (
     echo Failed to create the virtual environment.
-    echo Check your Python 3.11 installation and retry.
     pause
     exit /b 1
 )
@@ -45,18 +55,24 @@ if not exist "%VENV_PY%" (
 echo Upgrading pip, setuptools, and wheel...
 "%VENV_PY%" -m pip install --upgrade pip setuptools wheel
 
-echo Installing minimal runtime dependencies first...
+echo Installing base runtime dependencies...
 "%VENV_PY%" -m pip install --prefer-binary numpy requests pillow websocket-client
 
 echo Installing media and optional runtime dependencies...
 "%VENV_PY%" -m pip install --prefer-binary sounddevice soundfile openai mss playwright yt-dlp
 
-echo Installing speech stack in a Python 3.11-safe order...
-"%VENV_PY%" -m pip install --prefer-binary "av==11.0.0"
+echo Installing speech stack...
+"%VENV_PY%" -m pip install --prefer-binary --only-binary=:all: "av==11.0.0"
+if errorlevel 1 (
+    echo No prebuilt av wheel found for this environment.
+    echo Falling back to source build using the installed MSVC toolchain...
+    "%VENV_PY%" -m pip install --no-cache-dir "av==11.0.0"
+)
+
 "%VENV_PY%" -m pip install --prefer-binary faster-whisper
 
 echo Verifying environment...
-"%VENV_PY%" -c "import sys, numpy; print(sys.version); print('numpy: OK')"
+"%VENV_PY%" -c "import sys, numpy, av; print(sys.version); print('numpy: OK'); print('av: OK')"
 
 echo Starting app...
 "%VENV_PY%" "%APP_PATH%"
