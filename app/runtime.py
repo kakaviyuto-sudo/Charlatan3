@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import time
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Optional
 
+from app.lifecycle import LifecycleManager
 from config.settings import Settings
 from core.event_bus import EventBus
 from core.logger import get_logger
 from core.state import AppState
-from app.lifecycle import LifecycleManager
+
 
 class Runtime:
     def __init__(self, settings: Settings):
@@ -18,6 +19,8 @@ class Runtime:
         self.lifecycle = LifecycleManager(self.state)
 
     def register_service(self, name: str, instance: object) -> None:
+        if instance is None:
+            raise ValueError(f"Cannot register service '{name}' with a None instance")
         self.state.register_service(name, instance)
         self.lifecycle.register(instance)
 
