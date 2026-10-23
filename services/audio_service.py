@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 import queue
 import threading
 import time
