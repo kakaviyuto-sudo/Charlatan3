@@ -9,6 +9,7 @@ class BaseService(ABC):
 
     def __init__(self, runtime: Any = None, **kwargs: Any):
         self.runtime = runtime
+        self.state = getattr(runtime, "state", None)
         for key, value in kwargs.items():
             setattr(self, key, value)
 
